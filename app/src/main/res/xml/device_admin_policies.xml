@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<device-admin>
+    <uses-policies>
+        <!-- No specific policies needed, effectively just "admin" to prevent uninstall -->
+    </uses-policies>
+</device-admin>

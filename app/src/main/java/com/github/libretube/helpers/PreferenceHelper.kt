@@ -309,4 +309,11 @@ object PreferenceHelper {
     private fun getAuthenticationPreferences(context: Context): SharedPreferences {
         return context.getSharedPreferences(PreferenceKeys.AUTH_PREF_FILE, Context.MODE_PRIVATE)
     }
+    fun getLockPassword(): String {
+        return settings.getString("lock_settings_password", "") ?: ""
+    }
+
+    fun setLockPassword(password: String) {
+        putString("lock_settings_password", password)
+    }
 }

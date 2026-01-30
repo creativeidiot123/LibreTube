@@ -13,8 +13,12 @@ import com.github.libretube.R
 import com.github.libretube.databinding.DialogTextPreferenceBinding
 import com.github.libretube.ui.activities.SettingsActivity
 import com.github.libretube.ui.extensions.onSystemInsets
+import android.content.SharedPreferences
 import com.github.libretube.ui.preferences.EditNumberPreference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import androidx.preference.PreferenceGroup
+import com.github.libretube.helpers.PreferenceHelper
+import com.github.libretube.ui.preferences.BackupRestoreSettings
 
 /**
  * PreferenceFragmentCompat using the [MaterialAlertDialogBuilder] instead of the old dialog builder
@@ -28,6 +32,112 @@ abstract class BasePreferenceFragment : PreferenceFragmentCompat() {
      * Whether any preference dialog is currently visible to the user.
      */
     var isDialogVisible = false
+
+    private val preferenceChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "lock_settings") {
+            checkSettingsLock()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        preferenceManager.sharedPreferences?.registerOnSharedPreferenceChangeListener(preferenceChangeListener)
+        checkSettingsLock()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        preferenceManager.sharedPreferences?.unregisterOnSharedPreferenceChangeListener(preferenceChangeListener)
+    }
+
+    private fun checkSettingsLock() {
+        val lockSwitch = findPreference<androidx.preference.SwitchPreferenceCompat>("lock_settings")
+        lockSwitch?.setOnPreferenceChangeListener { preference, newValue ->
+            val isLocking = newValue as Boolean
+            if (isLocking) {
+                // Locking
+                val currentPassword = PreferenceHelper.getLockPassword()
+                if (currentPassword.isEmpty()) {
+                    showSetPasswordDialog(preference as androidx.preference.SwitchPreferenceCompat)
+                    false // Don't toggle yet
+                } else {
+                    true // Allow toggle
+                }
+            } else {
+                // Unlocking
+                showUnlockDialog(preference as androidx.preference.SwitchPreferenceCompat)
+                false // Don't toggle yet
+            }
+        }
+
+        val isLocked = PreferenceHelper.getBoolean("lock_settings", false)
+        val isBackupSettings = this is BackupRestoreSettings
+
+        // If we are in Backup settings, we don't need to lock anything.
+        if (isBackupSettings) return
+
+        updatePreferencesRecursively(preferenceScreen, isLocked)
+    }
+
+    private fun showSetPasswordDialog(preference: androidx.preference.SwitchPreferenceCompat) {
+        val binding = DialogTextPreferenceBinding.inflate(layoutInflater)
+        binding.input.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        binding.input.hint = getString(R.string.lock_settings_password_hint)
+
+        isDialogVisible = true
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.lock_settings_set_password_title)
+            .setView(binding.root)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val password = binding.input.text.toString()
+                if (password.isNotEmpty()) {
+                    PreferenceHelper.setLockPassword(password)
+                    preference.isChecked = true
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .setOnDismissListener { isDialogVisible = false }
+            .show()
+    }
+
+    private fun showUnlockDialog(preference: androidx.preference.SwitchPreferenceCompat) {
+        val binding = DialogTextPreferenceBinding.inflate(layoutInflater)
+        binding.input.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        binding.input.hint = getString(R.string.lock_settings_password_hint)
+
+        isDialogVisible = true
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.lock_settings_password_title)
+            .setView(binding.root)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val input = binding.input.text.toString()
+                if (input == PreferenceHelper.getLockPassword()) {
+                    preference.isChecked = false
+                } else {
+                    Toast.makeText(requireContext(), R.string.lock_settings_password_error, Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .setOnDismissListener { isDialogVisible = false }
+            .show()
+    }
+
+    private fun updatePreferencesRecursively(group: PreferenceGroup, isLocked: Boolean) {
+        for (i in 0 until group.preferenceCount) {
+            val preference = group.getPreference(i)
+
+            if (preference is PreferenceGroup) {
+                // Don't disable groups (categories), so their enabled children remain interactive
+                updatePreferencesRecursively(preference, isLocked)
+            } else {
+                if (preference.key == "lock_settings" || preference.key == "backup_restore") {
+                    preference.isEnabled = true
+                } else {
+                    preference.isEnabled = !isLocked
+                }
+            }
+        }
+    }
 
     override fun onStart() {
         super.onStart()

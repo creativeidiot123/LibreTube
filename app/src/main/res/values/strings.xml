@@ -578,4 +578,10 @@
     <string name="also_clear_watch_positions">Also clear watch positions</string>
     <string name="import_temp_playlist">Import temporary playlist?</string>
     <string name="import_temp_playlist_summary">Do you want to create a new playlist named \'%1$s\'? The playlist will contain %2$d videos.</string>
+    <string name="lock_settings">Lock Settings</string>
+    <string name="lock_settings_summary">Prevent changes to settings (except Backup &amp; Restore)</string>
+    <string name="lock_settings_password_title">Enter Password</string>
+    <string name="lock_settings_set_password_title">Set Password</string>
+    <string name="lock_settings_password_error">Incorrect Password</string>
+    <string name="lock_settings_password_hint">Password</string>
 </resources>

@@ -67,16 +67,10 @@ class MainActivity : BaseActivity() {
     lateinit var binding: ActivityMainBinding
     lateinit var navController: NavController
 
-    private lateinit var searchView: SearchView
-    private lateinit var searchItem: MenuItem
-
     private var startFragmentId = R.id.homeFragment
-
-    private val searchViewModel: SearchViewModel by viewModels()
     private val subscriptionsViewModel: SubscriptionsViewModel by viewModels()
 
-    private var savedSearchQuery: String? = null
-    private var shouldOpenSuggestions = true
+
 
     // registering for activity results is only possible, this here should have been part of
     // PlaylistOptionsBottomSheet instead if Android allowed us to
@@ -290,136 +284,11 @@ class MainActivity : BaseActivity() {
         }
     }
 
-    private fun isSearchInProgress(): Boolean {
-        if (!this::navController.isInitialized) return false
-        val id = navController.currentDestination?.id ?: return false
 
-        return id in listOf(
-            R.id.searchFragment,
-            R.id.searchResultFragment,
-            R.id.channelFragment,
-            R.id.playlistFragment
-        )
-    }
-
-    private fun addSearchQueryToHistory(query: String) {
-        val searchHistoryEnabled =
-            PreferenceHelper.getBoolean(PreferenceKeys.SEARCH_HISTORY_TOGGLE, true)
-        if (searchHistoryEnabled && query.isNotEmpty()) {
-            lifecycleScope.launch(Dispatchers.IO) {
-                val newItem = SearchHistoryItem(query.trim())
-                DatabaseHelper.addToSearchHistory(newItem)
-            }
-        }
-    }
-
-    override fun invalidateMenu() {
-        // Don't invalidate menu when in search in progress
-        // this is a workaround as there is bug in android code
-        // details of bug: https://issuetracker.google.com/issues/244336571
-        if (isSearchInProgress()) {
-            return
-        }
-        super.invalidateMenu()
-    }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         // Inflate the menu; this adds items to the action bar if it is present.
         menuInflater.inflate(R.menu.action_bar, menu)
-
-        // stuff for the search in the topBar
-        val searchItem = menu.findItem(R.id.action_search)
-        this.searchItem = searchItem
-        searchView = searchItem.actionView as SearchView
-
-        searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
-            override fun onQueryTextSubmit(query: String): Boolean {
-                searchView.clearFocus()
-
-                // handle inserted YouTube-like URLs and directly open the referenced
-                // channel, playlist or video instead of showing search results
-                if (query.toHttpUrlOrNull() != null) {
-                    val queryIntent = IntentHelper.resolveType(query.toUri())
-
-                    val didNavigate = navigateToMediaByIntent(queryIntent) {
-                        navController.popBackStack(R.id.searchFragment, true)
-                        searchItem.collapseActionView()
-                    }
-                    if (didNavigate) return true
-                }
-
-                navController.navigate(NavDirections.showSearchResults(query))
-
-                addSearchQueryToHistory(query)
-
-                return true
-            }
-
-            override fun onQueryTextChange(newText: String?): Boolean {
-                if (!shouldOpenSuggestions) return true
-
-                // Prevent navigation when search view is collapsed
-                if (searchView.isIconified ||
-                    binding.bottomNav.menu.children.any {
-                        it.itemId == navController.currentDestination?.id
-                    }
-                ) {
-                    return true
-                }
-
-                // prevent malicious navigation when the search view is getting collapsed
-                val destIds = listOf(
-                    R.id.searchResultFragment,
-                    R.id.channelFragment,
-                    R.id.playlistFragment
-                )
-                if (navController.currentDestination?.id in destIds && newText == null) {
-                    return false
-                }
-
-                if (navController.currentDestination?.id != R.id.searchFragment) {
-                    navController.navigate(
-                        R.id.searchFragment,
-                        bundleOf(IntentData.query to newText)
-                    )
-                } else {
-                    searchViewModel.setQuery(newText)
-                }
-
-                return true
-            }
-        })
-
-        searchItem.setOnActionExpandListener(object : MenuItem.OnActionExpandListener {
-            override fun onMenuItemActionExpand(item: MenuItem): Boolean {
-                if (navController.currentDestination?.id != R.id.searchResultFragment) {
-                    searchViewModel.setQuery(null)
-                    navController.navigate(R.id.openSearch)
-                }
-                item.setShowAsAction(
-                    MenuItem.SHOW_AS_ACTION_ALWAYS or MenuItem.SHOW_AS_ACTION_COLLAPSE_ACTION_VIEW
-                )
-                return true
-            }
-
-            override fun onMenuItemActionCollapse(item: MenuItem): Boolean {
-                // Handover back press to `BackPressedDispatcher` if not on a root destination
-                if (navController.previousBackStackEntry != null) {
-                    this@MainActivity.onBackPressedDispatcher.onBackPressed()
-                }
-
-                // Suppress collapsing of search when search in progress.
-                return !isSearchInProgress()
-            }
-        })
-
-        // handle search queries passed by the intent
-        if (savedSearchQuery != null) {
-            searchItem.expandActionView()
-            searchView.setQuery(savedSearchQuery, true)
-            savedSearchQuery = null
-        }
-
         return super.onCreateOptionsMenu(menu)
     }
 
@@ -427,21 +296,16 @@ class MainActivity : BaseActivity() {
      * @return whether the search view focus was cleared successfully
      */
     fun clearSearchViewFocus(): Boolean {
-        if (!this::searchView.isInitialized || !searchView.anyChildFocused()) return false
-
-        searchView.clearFocus()
-        return true
+        return false
     }
 
     /**
      * Update the query text in the search bar without opening the search suggestions
      */
+    /**
+     * Update the query text in the search bar without opening the search suggestions
+     */
     fun setQuerySilent(query: String) {
-        if (!this::searchView.isInitialized) return
-
-        shouldOpenSuggestions = false
-        searchView.setQuery(query, false)
-        shouldOpenSuggestions = true
     }
 
     /**
@@ -449,7 +313,6 @@ class MainActivity : BaseActivity() {
      * @param submit whether to immediately load the search results (not suggestions)
      */
     fun setQuery(query: String, submit: Boolean) {
-        if (::searchView.isInitialized) searchView.setQuery(query, submit)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
@@ -515,10 +378,7 @@ class MainActivity : BaseActivity() {
         // navigate to (temporary) playlist or channel if available
         if (navigateToMediaByIntent(intent)) return
 
-        // Get saved search query if available
-        intent?.getStringExtra(IntentData.query)?.let {
-            savedSearchQuery = it
-        }
+
 
         // Open the Downloads screen if requested
         if (intent?.getBooleanExtra(IntentData.OPEN_DOWNLOADS, false) == true) {
@@ -618,7 +478,7 @@ class MainActivity : BaseActivity() {
         }
 
         // Remove focus from search view when navigating to bottom view.
-        searchItem.collapseActionView()
+        // Remove focus from search view when navigating to bottom view.
 
         return item.onNavDestinationSelected(navController)
     }
